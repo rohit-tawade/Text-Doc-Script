@@ -477,18 +477,6 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
             "gap_after": float(gap_after),
         }
 
-    def kv_block_item(label, value, size=10.5, indent=0.0, value_indent=14.0, gap_after=0.0):
-        # Label on one line (bold), value on the next wrapped line(s).
-        return {
-            "type": "kvblock",
-            "label": _pdf_safe_text(label),
-            "value": _pdf_safe_text(value),
-            "size": float(size),
-            "indent": float(indent),
-            "value_indent": float(value_indent),
-            "gap_after": float(gap_after),
-        }
-
     def spacer_item(height):
         return {"type": "spacer", "height": float(height)}
 
@@ -688,12 +676,30 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         current_cmds.append("Q")
         y -= line_h
 
+    def wrap_text_by_width(text, size, max_width, bold=False):
+        text = _pdf_safe_text(text).strip()
+        if not text:
+            return [""]
+        words = text.split()
+        if not words:
+            return [text]
+        lines = []
+        current = words[0]
+        for word in words[1:]:
+            candidate = f"{current} {word}"
+            if approx_text_width(candidate, size, bold=bold) <= max_width:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+        lines.append(current)
+        return lines
+
     def estimate_wrapped_line_count(text, size, indent=0.0, bullet=False):
         text = _pdf_safe_text(text)
         bullet_prefix_w = approx_text_width("• ", size, bold=False) if bullet else 0.0
         usable_w = content_w - indent - bullet_prefix_w
-        max_chars = max(20, int(usable_w / max(size * 0.52, 1)))
-        wrapped = _wrap_pdf_text(text, max_chars)
+        wrapped = wrap_text_by_width(text, size, usable_w, bold=False)
         return max(1, len(wrapped))
 
     def estimate_para_height(text, size, indent=0.0, bullet=False, gap_after=0.0):
@@ -753,8 +759,8 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
                 line_h = max(12.0, size * 1.35)
                 bullet_prefix = "• "
                 bullet_prefix_w = approx_text_width(bullet_prefix, size, bold=False)
-                max_chars = max(20, int((content_w - 12 - bullet_prefix_w) / (size * 0.52)))
-                wrapped = _wrap_pdf_text(bullet_text, max_chars)
+                usable_w = max(20.0, content_w - 12 - bullet_prefix_w)
+                wrapped = wrap_text_by_width(bullet_text, size, usable_w, bold=False)
                 if wrapped:
                     add_text_segments_line([(bullet_prefix, False), (wrapped[0], False)], size=size, indent=12)
                     for segment in wrapped[1:]:
@@ -770,33 +776,20 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
             indent = item.get("indent", 0.0)
             label = item.get("label", "")
             value = item.get("value", "")
-            label_width = approx_text_width(label, size, bold=True)
-            value_indent = indent + label_width
-            max_chars = max(20, int((content_w - value_indent) / (size * 0.52)))
-            wrapped = _wrap_pdf_text(value, max_chars) if value else []
-            if wrapped:
-                add_text_segments_line([(label, True), (wrapped[0], False)], size=size, indent=indent)
-                for segment in wrapped[1:]:
-                    add_text_line(segment, size=size, bold=False, align="L", indent=value_indent)
-            else:
-                add_text_segments_line([(label, True)], size=size, indent=indent)
-            if item.get("gap_after", 0):
-                ensure_space(item["gap_after"])
-                y -= item["gap_after"]
-            continue
+            full_text = f"{label}{value}" if value else label
+            wrapped = wrap_text_by_width(full_text, size, max(20.0, content_w - indent), bold=False)
+            if not wrapped:
+                wrapped = [full_text] if full_text else [""]
 
-        if item["type"] == "kvblock":
-            size = item["size"]
-            indent = item.get("indent", 0.0)
-            value_indent = item.get("value_indent", 14.0)
-            label = item.get("label", "")
-            value = item.get("value", "")
-            add_text_line(label, size=size, bold=True, align="L", indent=indent)
-            if value:
-                max_chars = max(20, int((content_w - value_indent) / (size * 0.52)))
-                wrapped = _wrap_pdf_text(value, max_chars)
-                for segment in wrapped:
-                    add_text_line(segment, size=size, bold=False, align="L", indent=value_indent)
+            first_line = wrapped[0]
+            if label and first_line.startswith(label):
+                first_value = first_line[len(label):]
+                add_text_segments_line([(label, True), (first_value, False)], size=size, indent=indent)
+            else:
+                add_text_line(first_line, size=size, bold=False, align="L", indent=indent)
+
+            for segment in wrapped[1:]:
+                add_text_line(segment, size=size, bold=False, align="L", indent=indent)
             if item.get("gap_after", 0):
                 ensure_space(item["gap_after"])
                 y -= item["gap_after"]
@@ -808,11 +801,15 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         indent = item.get("indent", 0.0)
         bullet = item.get("bullet", False)
         line_h = max(12.0, size * 1.35)
-        max_chars = max(20, int((content_w - indent - (10 if bullet else 0)) / (size * 0.52)))
-        wrapped = _wrap_pdf_text(item["text"], max_chars)
         if bullet:
             bullet_prefix = "• "
             bullet_prefix_w = approx_text_width(bullet_prefix, size, bold=False)
+            wrapped = wrap_text_by_width(
+                item["text"],
+                size,
+                max(20.0, content_w - indent - bullet_prefix_w),
+                bold=bold,
+            )
             if wrapped:
                 add_text_segments_line([(bullet_prefix, False), (wrapped[0], bold)], size=size, indent=indent)
                 for segment in wrapped[1:]:
@@ -820,6 +817,7 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
             else:
                 add_text_line(bullet_prefix, size=size, bold=False, align="L", indent=indent)
         else:
+            wrapped = wrap_text_by_width(item["text"], size, max(20.0, content_w - indent), bold=bold)
             for segment in wrapped:
                 add_text_line(segment, size=size, bold=bold, align="L", indent=indent)
         if item.get("gap_after", 0):

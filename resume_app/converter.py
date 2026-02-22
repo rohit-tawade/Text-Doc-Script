@@ -457,13 +457,13 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
             "gap_after": float(gap_after),
         }
 
-    def expmeta_item(left, right, size=10.5, gap_after=2.0):
+    def expblock_item(role_company, date_text, bullets, size=10.0):
         return {
-            "type": "expmeta",
-            "left": _pdf_safe_text(left),
-            "right": _pdf_safe_text(right),
+            "type": "expblock",
+            "role_company": _pdf_safe_text(role_company or ""),
+            "date_text": _pdf_safe_text(date_text or ""),
+            "bullets": [_pdf_safe_text(b) for b in (bullets or []) if _pdf_safe_text(b)],
             "size": float(size),
-            "gap_after": float(gap_after),
         }
 
     def kv_para_item(label, value, size=10.5, indent=0.0, gap_after=0.0):
@@ -507,6 +507,44 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         items.append(line_item(title.upper(), size=11.5, bold=True, gap_after=2))
         items.append(rule_item(gap_after=6))
 
+    def format_role_company_line(header_text):
+        header_text = clean_bullet_text(header_text or "")
+        if not header_text:
+            return ""
+        parts = re.split(r"\s+[—-]\s+", header_text, maxsplit=1)
+        if len(parts) != 2:
+            return header_text
+        left, right = parts[0].strip(), parts[1].strip()
+        role_words = (
+            "engineer",
+            "developer",
+            "architect",
+            "analyst",
+            "administrator",
+            "consultant",
+            "manager",
+            "specialist",
+            "platform",
+            "devops",
+            "sre",
+            "site reliability",
+            "lead",
+            "principal",
+        )
+
+        def looks_like_role(text):
+            lowered = text.lower()
+            return any(word in lowered for word in role_words)
+
+        if looks_like_role(left) and not looks_like_role(right):
+            role, company = left, right
+        elif looks_like_role(right) and not looks_like_role(left):
+            role, company = right, left
+        else:
+            # Default to source resumes using Company — Role format.
+            company, role = left, right
+        return f"{role} — {company}"
+
     candidate_name = (data.get("name") or "").strip() or "Candidate Name"
     items.append(line_item(candidate_name, size=22, bold=True, align="C", gap_after=3))
 
@@ -549,13 +587,11 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         for role in experience_items:
             header = clean_bullet_text(role.get("header", ""))
             duration = clean_bullet_text(role.get("duration", ""))
-            if header or duration:
-                items.append(expmeta_item(header, duration, size=10.2, gap_after=2))
-
             bullets = [clean_bullet_text(item) for item in role.get("bullets", []) if clean_bullet_text(item)]
-            for bullet in bullets:
-                items.append(para_item(bullet, size=10.0, indent=12, bullet=True, gap_after=0.8))
-            items.append(spacer_item(4))
+            role_company_line = format_role_company_line(header)
+            if role_company_line or duration or bullets:
+                items.append(expblock_item(role_company_line, duration, bullets, size=10.0))
+                items.append(spacer_item(4))
 
     skills_lines = [clean_bullet_text(line) for line in data.get("skills_raw", "").splitlines() if clean_bullet_text(line)]
     if skills_lines:
@@ -652,6 +688,19 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         current_cmds.append("Q")
         y -= line_h
 
+    def estimate_wrapped_line_count(text, size, indent=0.0, bullet=False):
+        text = _pdf_safe_text(text)
+        bullet_prefix_w = approx_text_width("• ", size, bold=False) if bullet else 0.0
+        usable_w = content_w - indent - bullet_prefix_w
+        max_chars = max(20, int(usable_w / max(size * 0.52, 1)))
+        wrapped = _wrap_pdf_text(text, max_chars)
+        return max(1, len(wrapped))
+
+    def estimate_para_height(text, size, indent=0.0, bullet=False, gap_after=0.0):
+        line_h = max(12.0, size * 1.35)
+        count = estimate_wrapped_line_count(text, size, indent=indent, bullet=bullet)
+        return count * line_h + float(gap_after)
+
     for item in items:
         if item["type"] == "spacer":
             ensure_space(item["height"])
@@ -678,30 +727,42 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
                 y -= item["gap_after"]
             continue
 
-        if item["type"] == "expmeta":
+        if item["type"] == "expblock":
             size = item["size"]
-            left = item.get("left", "")
-            right = item.get("right", "")
-            line_h = max(12.0, size * 1.35)
-            ensure_space(line_h)
-            if left and right:
-                left_w = approx_text_width(left, size, bold=True)
-                right_w = approx_text_width(right, size, bold=False)
-                if left_w + right_w + 18 <= content_w:
-                    add_text_line(left, size=size, bold=True, align="L")
-                    y += line_h  # draw right text on same visual line
-                    add_text_line(right, size=size, bold=False, align="R")
+            role_company = item.get("role_company", "")
+            date_text = item.get("date_text", "")
+            bullets = item.get("bullets", [])
+
+            role_line_h = max(12.0, (size + 0.2) * 1.35)
+            date_line_h = max(12.0, (size - 0.1) * 1.35)
+            date_gap = 2.0
+            first_bullet_height = 0.0
+            if bullets:
+                first_bullet_height = estimate_para_height(bullets[0], size, indent=12, bullet=True, gap_after=0.8)
+            # Keep role + date + first bullet together on the same page.
+            ensure_space(role_line_h + date_line_h + date_gap + first_bullet_height)
+
+            if role_company:
+                add_text_line(role_company, size=size + 0.2, bold=True, align="L")
+            if date_text:
+                add_text_line(date_text, size=max(9.8, size - 0.1), bold=False, align="L")
+            ensure_space(date_gap)
+            y -= date_gap
+
+            for bullet_text in bullets:
+                line_h = max(12.0, size * 1.35)
+                bullet_prefix = "• "
+                bullet_prefix_w = approx_text_width(bullet_prefix, size, bold=False)
+                max_chars = max(20, int((content_w - 12 - bullet_prefix_w) / (size * 0.52)))
+                wrapped = _wrap_pdf_text(bullet_text, max_chars)
+                if wrapped:
+                    add_text_segments_line([(bullet_prefix, False), (wrapped[0], False)], size=size, indent=12)
+                    for segment in wrapped[1:]:
+                        add_text_line(segment, size=size, bold=False, align="L", indent=12 + bullet_prefix_w)
                 else:
-                    add_text_line(left, size=size, bold=True, align="L")
-                    if right:
-                        add_text_line(right, size=max(9.5, size - 0.2), bold=False, align="L", indent=12)
-            elif left:
-                add_text_line(left, size=size, bold=True, align="L")
-            elif right:
-                add_text_line(right, size=size, bold=False, align="R")
-            if item.get("gap_after", 0):
-                ensure_space(item["gap_after"])
-                y -= item["gap_after"]
+                    add_text_line(bullet_prefix, size=size, bold=False, align="L", indent=12)
+                ensure_space(0.8)
+                y -= 0.8
             continue
 
         if item["type"] == "kvpara":

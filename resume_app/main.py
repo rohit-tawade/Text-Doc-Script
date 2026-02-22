@@ -219,6 +219,15 @@ class ResumePdfApp(App):
         temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
 
+    def save_pdf_fallback_app_storage(self, source_pdf_path, filename, folder_name=None):
+        """Always-writable app-local fallback for devices where MediaStore insert fails."""
+        folder_name = sanitize_foldername(folder_name or "")
+        target_dir = self.get_app_pdf_temp_dir() / folder_name
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / filename
+        shutil.copyfile(str(source_pdf_path), str(target_path))
+        return target_path
+
     def on_generate_pdf(self, _instance):
         resume_text = self.resume_input.text.strip()
         if not resume_text:
@@ -246,7 +255,13 @@ class ResumePdfApp(App):
                 temp_folder.mkdir(parents=True, exist_ok=True)
                 temp_pdf_path = temp_folder / filename
                 generated_pdf = convert_text_to_pdf(resume_text, temp_pdf_path, source_hint=filename)
-                result = self.save_pdf_to_android_downloads(generated_pdf, filename, folder_name=folder_name)
+                try:
+                    result = self.save_pdf_to_android_downloads(generated_pdf, filename, folder_name=folder_name)
+                except Exception as save_exc:
+                    print(f"Downloads save failed, falling back to app storage: {save_exc}")
+                    result = self.save_pdf_fallback_app_storage(generated_pdf, filename, folder_name=folder_name)
+                    self.set_status(f"Saved in app storage - {result}")
+                    return
             else:
                 target_dir = self.get_download_directory() / folder_name
                 target_path = target_dir / filename

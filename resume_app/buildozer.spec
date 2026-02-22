@@ -7,7 +7,7 @@ source.include_exts = py,txt,png,jpg,jpeg,kv,atlas,jinja
 source.exclude_dirs = .git,__pycache__,build,dist,.venv,venv,build-env
 source.exclude_patterns = *.pyc,*.pyo,*.tmp
 version = 1.0.0
-requirements = python3,kivy,fpdf2,setuptools
+requirements = python3,kivy,fpdf2,pyjnius,setuptools
 orientation = portrait
 fullscreen = 0
 

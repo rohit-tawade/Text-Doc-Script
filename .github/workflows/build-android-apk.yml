@@ -75,8 +75,22 @@ jobs:
           assert pdf_path.exists(), "Smoke PDF was not created"
           assert data.startswith(b"%PDF-"), "Output is not a PDF"
           assert len(data) > 1000, f"PDF too small ({len(data)} bytes)"
+          for token in (b"Rohit Tawade", b"PROFESSIONAL SUMMARY", b"Kubernetes", b"EDUCATION"):
+              assert token in data, f"Expected token missing from PDF bytes: {token!r}"
           print(f"Smoke test OK: {pdf_path} ({len(data)} bytes)")
           PY
+
+      - name: Syntax check app code
+        run: |
+          python -m py_compile resume_app/main.py resume_app/converter.py
+
+      - name: Upload smoke-test PDF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resume-app-smoke-pdf
+          path: ci_smoke/smoke.pdf
+          if-no-files-found: ignore
 
       - name: Cache Buildozer and p4a downloads
         uses: actions/cache@v4
@@ -142,6 +156,42 @@ jobs:
 
           print(f"APK smoke OK: {apk} ({apk.stat().st_size} bytes)")
           PY
+
+      - name: Verify APK signing and manifest metadata
+        if: success()
+        run: |
+          set -euo pipefail
+          APK="$(ls resume_app/bin/*.apk | head -n 1)"
+          SDK="$HOME/.buildozer/android/platform/android-sdk"
+          AAPT="$(find "$SDK/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          APKSIGNER="$(find "$SDK/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+
+          test -n "$AAPT"
+          test -n "$APKSIGNER"
+          test -f "$APK"
+
+          "$APKSIGNER" verify --print-certs "$APK" | tee apk_sign_verify.txt
+          "$AAPT" dump badging "$APK" | tee apk_badging.txt
+          "$AAPT" dump permissions "$APK" | tee apk_permissions.txt
+
+          grep -q "package: name='org.textdocscript.resumepdf'" apk_badging.txt
+          grep -q "sdkVersion:'24'" apk_badging.txt
+          grep -q "targetSdkVersion:'33'" apk_badging.txt
+          grep -q "uses-permission: name='android.permission.READ_EXTERNAL_STORAGE'" apk_permissions.txt
+          grep -q "uses-permission: name='android.permission.WRITE_EXTERNAL_STORAGE'" apk_permissions.txt
+          ! grep -q "android.permission.MANAGE_EXTERNAL_STORAGE" apk_permissions.txt
+          ! grep -q "android.permission.INTERNET" apk_permissions.txt
+
+      - name: Upload APK verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resume-app-apk-reports
+          path: |
+            apk_sign_verify.txt
+            apk_badging.txt
+            apk_permissions.txt
+          if-no-files-found: ignore
 
       - name: Print error context (on failure)
         if: failure()

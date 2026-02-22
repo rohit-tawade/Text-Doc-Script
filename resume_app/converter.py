@@ -382,12 +382,12 @@ def _pdf_safe_text(text):
         "\u2019": "'",
         "\u201c": '"',
         "\u201d": '"',
-        "\u2022": "-",
+        "\u2022": "•",
         "\u00a0": " ",
     }
     for src, dst in replacements.items():
         text = text.replace(src, dst)
-    return text.encode("latin-1", errors="replace").decode("latin-1")
+    return text.encode("cp1252", errors="replace").decode("cp1252")
 
 
 def _pdf_escape_text(text):
@@ -468,6 +468,18 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
             "gap_after": float(gap_after),
         }
 
+    def kv_block_item(label, value, size=10.5, indent=0.0, value_indent=14.0, gap_after=0.0):
+        # Label on one line (bold), value on the next wrapped line(s).
+        return {
+            "type": "kvblock",
+            "label": _pdf_safe_text(label),
+            "value": _pdf_safe_text(value),
+            "size": float(size),
+            "indent": float(indent),
+            "value_indent": float(value_indent),
+            "gap_after": float(gap_after),
+        }
+
     def spacer_item(height):
         return {"type": "spacer", "height": float(height)}
 
@@ -492,7 +504,7 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
     headline_bits = [bit for bit in (effective_title, metadata_role) if bit]
     if headline_bits:
         items.append(line_item(" | ".join(dict.fromkeys(headline_bits)), size=11, bold=True, align="C", gap_after=2))
-    items.append(spacer_item(4))
+    items.append(spacer_item(24))
 
     contact_items = build_contact_items(data.get("contact", []))
     if contact_items:
@@ -542,7 +554,7 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         for entry in skills_lines:
             if ":" in entry:
                 label, value = entry.split(":", 1)
-                items.append(kv_para_item(f"{label.strip()}: ", value.strip(), size=10.5))
+                items.append(kv_block_item(f"{label.strip()}:", value.strip(), size=10.5, value_indent=14))
             else:
                 items.append(para_item(entry, size=10.5, indent=14, bullet=True))
 
@@ -568,7 +580,7 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
             current_cmds = []
             y = page_h - margin_t
             return
-        stream = "\n".join(current_cmds).encode("latin-1", errors="replace")
+        stream = "\n".join(current_cmds).encode("cp1252", errors="replace")
         page_streams.append(stream)
         current_cmds = []
         y = page_h - margin_t
@@ -654,6 +666,23 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
                 y -= item["gap_after"]
             continue
 
+        if item["type"] == "kvblock":
+            size = item["size"]
+            indent = item.get("indent", 0.0)
+            value_indent = item.get("value_indent", 14.0)
+            label = item.get("label", "")
+            value = item.get("value", "")
+            add_text_line(label, size=size, bold=True, align="L", indent=indent)
+            if value:
+                max_chars = max(20, int((content_w - value_indent) / (size * 0.52)))
+                wrapped = _wrap_pdf_text(value, max_chars)
+                for segment in wrapped:
+                    add_text_line(segment, size=size, bold=False, align="L", indent=value_indent)
+            if item.get("gap_after", 0):
+                ensure_space(item["gap_after"])
+                y -= item["gap_after"]
+            continue
+
         # Paragraph (wrapped)
         size = item["size"]
         bold = item["bold"]
@@ -663,7 +692,7 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         max_chars = max(20, int((content_w - indent - (10 if bullet else 0)) / (size * 0.52)))
         wrapped = _wrap_pdf_text(item["text"], max_chars)
         for idx, segment in enumerate(wrapped):
-            prefix = "* " if (bullet and idx == 0) else ("  " if bullet else "")
+            prefix = "• " if (bullet and idx == 0) else ("  " if bullet else "")
             add_text_line(prefix + segment, size=size, bold=bold, align="L", indent=indent)
         if item.get("gap_after", 0):
             ensure_space(item["gap_after"])
@@ -681,7 +710,7 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
 
     def set_obj(obj_id, data):
         if isinstance(data, str):
-            data = data.encode("latin-1")
+            data = data.encode("cp1252", errors="replace")
         objects[obj_id] = data
 
     catalog_id = alloc_obj()
@@ -695,8 +724,8 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         page_ids.append(alloc_obj())
         content_ids.append(alloc_obj())
 
-    set_obj(font_regular_id, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
-    set_obj(font_bold_id, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>")
+    set_obj(font_regular_id, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    set_obj(font_bold_id, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>")
 
     for idx, stream_bytes in enumerate(page_streams):
         page_id = page_ids[idx]

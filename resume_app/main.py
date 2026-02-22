@@ -154,7 +154,6 @@ class ResumePdfApp(App):
 
         PythonActivity = autoclass("org.kivy.android.PythonActivity")
         ContentValues = autoclass("android.content.ContentValues")
-        Integer = autoclass("java.lang.Integer")
         MediaStoreDownloads = autoclass("android.provider.MediaStore$Downloads")
         MediaColumns = autoclass("android.provider.MediaStore$MediaColumns")
 
@@ -162,23 +161,14 @@ class ResumePdfApp(App):
         resolver = activity.getContentResolver()
 
         def content_values_put(values_obj, key, value):
-            """Box Python primitives so pyjnius resolves ContentValues.put() overloads."""
-            if isinstance(value, bool):
-                # pyjnius can map Python bool directly to java.lang.Boolean overload
-                values_obj.put(key, bool(value))
-            elif isinstance(value, int):
-                values_obj.put(key, Integer.valueOf(int(value)))
-            elif isinstance(value, float):
-                values_obj.put(key, float(value))
-            else:
-                values_obj.put(key, value)
+            # Use string values only to avoid pyjnius overload mismatches on some devices.
+            values_obj.put(key, value)
 
         values = ContentValues()
         content_values_put(values, MediaColumns.DISPLAY_NAME, filename)
         content_values_put(values, MediaColumns.MIME_TYPE, "application/pdf")
         if self.get_android_sdk_int() >= 29:
             content_values_put(values, MediaColumns.RELATIVE_PATH, f"Download/{folder_name}")
-            content_values_put(values, MediaColumns.IS_PENDING, 1)
 
         uri = resolver.insert(MediaStoreDownloads.EXTERNAL_CONTENT_URI, values)
         if uri is None:
@@ -202,11 +192,6 @@ class ResumePdfApp(App):
         finally:
             if output_stream is not None:
                 output_stream.close()
-
-        if self.get_android_sdk_int() >= 29:
-            done_values = ContentValues()
-            content_values_put(done_values, MediaColumns.IS_PENDING, 0)
-            resolver.update(uri, done_values, None, None)
 
         return ANDROID_DOWNLOAD_DIR / folder_name / filename
 

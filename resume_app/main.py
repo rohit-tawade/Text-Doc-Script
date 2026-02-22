@@ -154,6 +154,7 @@ class ResumePdfApp(App):
 
         PythonActivity = autoclass("org.kivy.android.PythonActivity")
         ContentValues = autoclass("android.content.ContentValues")
+        JavaString = autoclass("java.lang.String")
         MediaStoreDownloads = autoclass("android.provider.MediaStore$Downloads")
         MediaColumns = autoclass("android.provider.MediaStore$MediaColumns")
 
@@ -161,8 +162,15 @@ class ResumePdfApp(App):
         resolver = activity.getContentResolver()
 
         def content_values_put(values_obj, key, value):
-            # Use string values only to avoid pyjnius overload mismatches on some devices.
-            values_obj.put(key, value)
+            # Some devices/pyjnius builds fail overload resolution with plain Python str.
+            key_s = str(key)
+            val_s = str(value)
+            try:
+                values_obj.put(key_s, val_s)
+                return
+            except Exception:
+                pass
+            values_obj.put(JavaString(key_s), JavaString(val_s))
 
         values = ContentValues()
         content_values_put(values, MediaColumns.DISPLAY_NAME, filename)
@@ -170,7 +178,18 @@ class ResumePdfApp(App):
         if self.get_android_sdk_int() >= 29:
             content_values_put(values, MediaColumns.RELATIVE_PATH, f"Download/{folder_name}")
 
-        uri = resolver.insert(MediaStoreDownloads.EXTERNAL_CONTENT_URI, values)
+        try:
+            uri = resolver.insert(MediaStoreDownloads.EXTERNAL_CONTENT_URI, values)
+        except Exception as exc:
+            # Fallback: if RELATIVE_PATH triggers device-specific issues, retry to root Downloads.
+            if self.get_android_sdk_int() >= 29 and folder_name:
+                print(f"MediaStore insert with RELATIVE_PATH failed, retrying without folder path: {exc}")
+                retry_values = ContentValues()
+                content_values_put(retry_values, MediaColumns.DISPLAY_NAME, filename)
+                content_values_put(retry_values, MediaColumns.MIME_TYPE, "application/pdf")
+                uri = resolver.insert(MediaStoreDownloads.EXTERNAL_CONTENT_URI, retry_values)
+            else:
+                raise
         if uri is None:
             raise RuntimeError("Could not create file in Android Downloads")
 

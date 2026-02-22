@@ -27,6 +27,57 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Smoke test core resume -> PDF generation
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "resume_app")
+          import converter
+
+          sample_resume = """Rohit Tawade
+          Phone: +91 9999999999
+          Email: rohit@example.com
+          Address: Pune
+          Nationality: Indian
+          Company Name:
+
+          Site Reliability Engineer
+
+          Professional Summary
+          SRE focused on Kubernetes, CI/CD, observability, and platform reliability.
+
+          Professional Experience
+          Example Corp - Site Reliability Engineer
+          Jan 2024 - Dec 2024
+          * Operated Kubernetes clusters.
+          * Built CI/CD pipelines.
+
+          Technical Skills
+          * Containers: Kubernetes, Docker
+          * Observability: Prometheus, Grafana
+
+          Certification
+          * Example Certification
+
+          Education
+          * MCA, University, 2018
+          """
+
+          out_dir = Path("ci_smoke")
+          out_dir.mkdir(parents=True, exist_ok=True)
+          out_pdf = out_dir / "smoke.pdf"
+          result = converter.convert_text_to_pdf(sample_resume, out_pdf, source_hint="rohit-tawade-sre.txt")
+          pdf_path = Path(result)
+          data = pdf_path.read_bytes()
+
+          assert pdf_path.exists(), "Smoke PDF was not created"
+          assert data.startswith(b"%PDF-"), "Output is not a PDF"
+          assert len(data) > 1000, f"PDF too small ({len(data)} bytes)"
+          print(f"Smoke test OK: {pdf_path} ({len(data)} bytes)")
+          PY
+
       - name: Cache Buildozer and p4a downloads
         uses: actions/cache@v4
         with:
@@ -69,6 +120,28 @@ jobs:
           name: resume-app-build-log
           path: resume_app/buildozer.log
           if-no-files-found: ignore
+
+      - name: Smoke test APK artifact structure
+        if: success()
+        run: |
+          python - <<'PY'
+          import glob
+          import zipfile
+          from pathlib import Path
+
+          apks = glob.glob("resume_app/bin/*.apk")
+          assert apks, "No APK found"
+          apk = Path(apks[0])
+          assert apk.stat().st_size > 1_000_000, f"APK unexpectedly small: {apk.stat().st_size}"
+
+          with zipfile.ZipFile(apk, "r") as zf:
+              names = set(zf.namelist())
+              assert "AndroidManifest.xml" in names, "APK missing AndroidManifest.xml"
+              assert any(name.endswith("classes.dex") for name in names), "APK missing classes.dex"
+              assert any("lib/arm64-v8a/" in name for name in names), "APK missing arm64 native libs"
+
+          print(f"APK smoke OK: {apk} ({apk.stat().st_size} bytes)")
+          PY
 
       - name: Print error context (on failure)
         if: failure()

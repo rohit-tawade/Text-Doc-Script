@@ -255,11 +255,12 @@ class ResumePdfApp(App):
                 temp_folder.mkdir(parents=True, exist_ok=True)
                 temp_pdf_path = temp_folder / filename
                 generated_pdf = convert_text_to_pdf(resume_text, temp_pdf_path, source_hint=filename)
+                generated_name = Path(generated_pdf).name
                 try:
-                    result = self.save_pdf_to_android_downloads(generated_pdf, filename, folder_name=folder_name)
+                    result = self.save_pdf_to_android_downloads(generated_pdf, generated_name, folder_name=folder_name)
                 except Exception as save_exc:
                     print(f"Downloads save failed, falling back to app storage: {save_exc}")
-                    result = self.save_pdf_fallback_app_storage(generated_pdf, filename, folder_name=folder_name)
+                    result = self.save_pdf_fallback_app_storage(generated_pdf, generated_name, folder_name=folder_name)
                     self.set_status(f"Saved in app storage - {result}")
                     return
             else:

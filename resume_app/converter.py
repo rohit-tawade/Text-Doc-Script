@@ -311,7 +311,7 @@ def sanitize_component(text, replace_space_with_hyphen=False):
     text = re.sub(r"\s+", " ", text)
     safe_chars = []
     for ch in text:
-        if ch in '<>:"/\\|?*':
+        if ch in '<>:"/\\|?*_':
             safe_chars.append(' ')
         else:
             safe_chars.append(ch)
@@ -424,10 +424,10 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
 
     page_w = 595.0   # A4 width in points
     page_h = 842.0   # A4 height in points
-    margin_l = 36.0
-    margin_r = 36.0
-    margin_t = 36.0
-    margin_b = 36.0
+    margin_l = 40.0
+    margin_r = 40.0
+    margin_t = 40.0
+    margin_b = 40.0
     content_w = page_w - margin_l - margin_r
 
     def approx_text_width(text, size, bold=False):
@@ -457,6 +457,15 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
             "gap_after": float(gap_after),
         }
 
+    def expmeta_item(left, right, size=10.5, gap_after=2.0):
+        return {
+            "type": "expmeta",
+            "left": _pdf_safe_text(left),
+            "right": _pdf_safe_text(right),
+            "size": float(size),
+            "gap_after": float(gap_after),
+        }
+
     def kv_para_item(label, value, size=10.5, indent=0.0, gap_after=0.0):
         # Key/value line where the label (including colon) is bold and the value is normal.
         return {
@@ -483,19 +492,23 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
     def spacer_item(height):
         return {"type": "spacer", "height": float(height)}
 
+    def rule_item(gap_after=6.0):
+        return {"type": "rule", "gap_after": float(gap_after)}
+
     items = []
 
     def add_section_heading(title):
-        # Keep section separation visually clear by adding space *above* each heading.
+        # Professional separation: whitespace above, bold heading, then a thin rule.
         if items:
             if items[-1]["type"] == "spacer":
-                items[-1]["height"] = max(items[-1].get("height", 0.0), 24.0)
+                items[-1]["height"] = max(items[-1].get("height", 0.0), 18.0)
             else:
-                items.append(spacer_item(24))
-        items.append(line_item(title, size=11, bold=True))
+                items.append(spacer_item(18))
+        items.append(line_item(title.upper(), size=11.5, bold=True, gap_after=2))
+        items.append(rule_item(gap_after=6))
 
     candidate_name = (data.get("name") or "").strip() or "Candidate Name"
-    items.append(line_item(candidate_name, size=20, bold=True, align="C", gap_after=2))
+    items.append(line_item(candidate_name, size=22, bold=True, align="C", gap_after=3))
 
     effective_title = (data.get("title") or "").strip()
     metadata_role = (file_metadata.get("role") or "").strip()
@@ -503,8 +516,8 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         metadata_role = ""
     headline_bits = [bit for bit in (effective_title, metadata_role) if bit]
     if headline_bits:
-        items.append(line_item(" | ".join(dict.fromkeys(headline_bits)), size=11, bold=True, align="C", gap_after=2))
-    items.append(spacer_item(24))
+        items.append(line_item(" | ".join(dict.fromkeys(headline_bits)), size=11.5, bold=True, align="C", gap_after=2))
+    items.append(spacer_item(28))
 
     contact_items = build_contact_items(data.get("contact", []))
     if contact_items:
@@ -520,15 +533,15 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
             if not value:
                 continue
             if label_key in label_titles:
-                items.append(kv_para_item(f"{label_titles[label_key]}: ", value, size=10.5))
+                items.append(kv_para_item(f"{label_titles[label_key]}: ", value, size=10.0, gap_after=1))
             else:
-                items.append(para_item(value, size=10.5))
-        items.append(spacer_item(4))
+                items.append(para_item(value, size=10.0, gap_after=1))
+        items.append(spacer_item(6))
 
     summary_text = clean_bullet_text(data.get("summary", ""))
     if summary_text:
         add_section_heading("PROFESSIONAL SUMMARY")
-        items.append(para_item(summary_text, size=10.5))
+        items.append(para_item(summary_text, size=10.0, gap_after=2))
 
     experience_items = data.get("experience", [])
     if experience_items:
@@ -536,17 +549,13 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         for role in experience_items:
             header = clean_bullet_text(role.get("header", ""))
             duration = clean_bullet_text(role.get("duration", ""))
-            if header and duration:
-                items.append(para_item(f"{header} | {duration}", size=10.5, bold=True, gap_after=2))
-            elif header:
-                items.append(para_item(header, size=10.5, bold=True, gap_after=2))
-            elif duration:
-                items.append(para_item(duration, size=10.5, gap_after=2))
+            if header or duration:
+                items.append(expmeta_item(header, duration, size=10.2, gap_after=2))
 
             bullets = [clean_bullet_text(item) for item in role.get("bullets", []) if clean_bullet_text(item)]
             for bullet in bullets:
-                items.append(para_item(bullet, size=10.5, indent=14, bullet=True))
-            items.append(spacer_item(3))
+                items.append(para_item(bullet, size=10.0, indent=12, bullet=True, gap_after=0.8))
+            items.append(spacer_item(4))
 
     skills_lines = [clean_bullet_text(line) for line in data.get("skills_raw", "").splitlines() if clean_bullet_text(line)]
     if skills_lines:
@@ -554,21 +563,21 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         for entry in skills_lines:
             if ":" in entry:
                 label, value = entry.split(":", 1)
-                items.append(kv_block_item(f"{label.strip()}:", value.strip(), size=10.5, value_indent=14))
+                items.append(kv_para_item(f"{label.strip()}: ", value.strip(), size=10.0, gap_after=1.2))
             else:
-                items.append(para_item(entry, size=10.5, indent=14, bullet=True))
+                items.append(para_item(entry, size=10.0, indent=12, bullet=True, gap_after=0.8))
 
     certifications = [clean_bullet_text(item) for item in data.get("certifications", []) if clean_bullet_text(item)]
     if certifications:
         add_section_heading("CERTIFICATIONS")
         for cert in certifications:
-            items.append(para_item(cert, size=10.5, indent=14, bullet=True))
+            items.append(para_item(cert, size=10.0, indent=12, bullet=True, gap_after=0.8))
 
     education_lines = [clean_bullet_text(item) for item in data.get("education", []) if clean_bullet_text(item)]
     if education_lines:
         add_section_heading("EDUCATION")
         for edu in education_lines:
-            items.append(para_item(edu, size=10.5))
+            items.append(para_item(edu, size=10.0, gap_after=0.8))
 
     page_streams = []
     current_cmds = []
@@ -599,6 +608,9 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         if align == "C":
             width = approx_text_width(text, size, bold=bold)
             x = max(margin_l, (page_w - width) / 2.0)
+        elif align == "R":
+            width = approx_text_width(text, size, bold=bold)
+            x = max(margin_l + indent, page_w - margin_r - width)
         else:
             x = margin_l + indent
         current_cmds.append("BT")
@@ -627,6 +639,19 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
             x += approx_text_width(text, size, bold=bold)
         y -= line_h
 
+    def add_rule_line():
+        nonlocal y
+        line_h = 6.0
+        ensure_space(line_h)
+        rule_y = y - 1.0
+        current_cmds.append("q")
+        current_cmds.append("0.75 w")
+        current_cmds.append(f"{margin_l:.2f} {rule_y:.2f} m")
+        current_cmds.append(f"{(page_w - margin_r):.2f} {rule_y:.2f} l")
+        current_cmds.append("S")
+        current_cmds.append("Q")
+        y -= line_h
+
     for item in items:
         if item["type"] == "spacer":
             ensure_space(item["height"])
@@ -641,6 +666,39 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
                 align=item["align"],
                 indent=item["indent"],
             )
+            if item.get("gap_after", 0):
+                ensure_space(item["gap_after"])
+                y -= item["gap_after"]
+            continue
+
+        if item["type"] == "rule":
+            add_rule_line()
+            if item.get("gap_after", 0):
+                ensure_space(item["gap_after"])
+                y -= item["gap_after"]
+            continue
+
+        if item["type"] == "expmeta":
+            size = item["size"]
+            left = item.get("left", "")
+            right = item.get("right", "")
+            line_h = max(12.0, size * 1.35)
+            ensure_space(line_h)
+            if left and right:
+                left_w = approx_text_width(left, size, bold=True)
+                right_w = approx_text_width(right, size, bold=False)
+                if left_w + right_w + 18 <= content_w:
+                    add_text_line(left, size=size, bold=True, align="L")
+                    y += line_h  # draw right text on same visual line
+                    add_text_line(right, size=size, bold=False, align="R")
+                else:
+                    add_text_line(left, size=size, bold=True, align="L")
+                    if right:
+                        add_text_line(right, size=max(9.5, size - 0.2), bold=False, align="L", indent=12)
+            elif left:
+                add_text_line(left, size=size, bold=True, align="L")
+            elif right:
+                add_text_line(right, size=size, bold=False, align="R")
             if item.get("gap_after", 0):
                 ensure_space(item["gap_after"])
                 y -= item["gap_after"]
@@ -691,9 +749,18 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         line_h = max(12.0, size * 1.35)
         max_chars = max(20, int((content_w - indent - (10 if bullet else 0)) / (size * 0.52)))
         wrapped = _wrap_pdf_text(item["text"], max_chars)
-        for idx, segment in enumerate(wrapped):
-            prefix = "• " if (bullet and idx == 0) else ("  " if bullet else "")
-            add_text_line(prefix + segment, size=size, bold=bold, align="L", indent=indent)
+        if bullet:
+            bullet_prefix = "• "
+            bullet_prefix_w = approx_text_width(bullet_prefix, size, bold=False)
+            if wrapped:
+                add_text_segments_line([(bullet_prefix, False), (wrapped[0], bold)], size=size, indent=indent)
+                for segment in wrapped[1:]:
+                    add_text_line(segment, size=size, bold=bold, align="L", indent=indent + bullet_prefix_w)
+            else:
+                add_text_line(bullet_prefix, size=size, bold=False, align="L", indent=indent)
+        else:
+            for segment in wrapped:
+                add_text_line(segment, size=size, bold=bold, align="L", indent=indent)
         if item.get("gap_after", 0):
             ensure_space(item["gap_after"])
             y -= item["gap_after"]
@@ -880,28 +947,26 @@ def _render_pdf_fpdf(data, pdf_path, file_metadata=None):
 
 
 def _derive_output_stem(data, file_metadata, fallback_stem):
-    split_first, split_last = _split_name(data.get('name', ''))
-    component_specs = [
-        (split_first or file_metadata.get('first'), True),
-        (split_last or file_metadata.get('last'), True),
-        (file_metadata.get('role') or (data.get('title') or ''), True),
-        ((data.get('company') or file_metadata.get('company')), True)
-    ]
+    # Mandatory filename format: name-role-companyname.pdf
+    # Prefer parsed resume content, then fall back to source filename metadata.
+    name_value = (data.get('name') or '').strip()
+    if not name_value:
+        first = (file_metadata.get('first') or '').strip()
+        last = (file_metadata.get('last') or '').strip()
+        name_value = " ".join(part for part in (first, last) if part)
+
+    role_value = (data.get('title') or '').strip() or (file_metadata.get('role') or '').strip()
+    company_value = (data.get('company') or '').strip() or (file_metadata.get('company') or '').strip()
+
     components = []
-    for value, hyphenize in component_specs:
-        if not value:
-            continue
-        components.append(sanitize_component(value, replace_space_with_hyphen=hyphenize))
+    for value in (name_value, role_value, company_value):
+        safe = sanitize_component(value, replace_space_with_hyphen=True)
+        if safe:
+            components.append(safe)
+
     if components:
         return "-".join(components)
-    safe_name = sanitize_component(data.get('name', ''), replace_space_with_hyphen=True)
-    safe_title = sanitize_component(data.get('title', ''), replace_space_with_hyphen=True)
-    if safe_name and safe_title:
-        return f"{safe_name}-{safe_title}"
-    if safe_name:
-        return safe_name
-    if safe_title:
-        return safe_title
+
     return sanitize_component(fallback_stem, replace_space_with_hyphen=True) or fallback_stem
 
 
@@ -1137,9 +1202,9 @@ def convert_text_to_pdf(resume_text, output_pdf_path=None, source_hint=None):
         if output_pdf_path.exists() and output_pdf_path.is_dir():
             pdf_path = output_pdf_path / f"{filename_stem}.pdf"
         elif output_pdf_path.suffix.lower() == '.pdf':
-            pdf_path = output_pdf_path
+            pdf_path = output_pdf_path.parent / f"{filename_stem}.pdf"
         elif output_pdf_path.suffix:
-            pdf_path = output_pdf_path.with_suffix('.pdf')
+            pdf_path = output_pdf_path.parent / f"{filename_stem}.pdf"
         else:
             pdf_path = output_pdf_path / f"{filename_stem}.pdf"
 

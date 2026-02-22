@@ -1,0 +1,61 @@
+name: Build Android APK (Kivy)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "resume_app/**"
+      - ".github/workflows/build-android-apk.yml"
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache Buildozer and p4a downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            resume_app/.buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('resume_app/buildozer.spec', 'resume_app/main.py', 'resume_app/converter.py') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip openjdk-17-jdk autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
+            cmake libffi-dev libssl-dev libsqlite3-dev libjpeg-dev \
+            liblzma-dev libbz2-dev
+
+      - name: Install Buildozer
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install "cython<3.1" buildozer
+
+      - name: Build debug APK
+        working-directory: resume_app
+        env:
+          ANDROIDSDK: /home/runner/.buildozer/android/platform/android-sdk
+          ANDROIDNDK: /home/runner/.buildozer/android/platform/android-ndk-r25b
+        run: |
+          buildozer -v android debug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: resume-app-apk
+          path: resume_app/bin/*.apk
+          if-no-files-found: error

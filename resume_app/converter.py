@@ -794,16 +794,20 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
             if not wrapped:
                 wrapped = [full_text] if full_text else [""]
 
-            # Render first line as a normal paragraph line, then overlay only the label in bold.
-            # This avoids visible extra spacing caused by approximate bold-width x advancement.
             first_line = wrapped[0]
             line_h = max(12.0, size * 1.35)
             ensure_space(line_h)
             first_x = margin_l + indent
             first_y = y
-            draw_text_at(first_line, size=size, x=first_x, y_pos=first_y, bold=False)
             if label and first_line.startswith(label):
+                first_value = first_line[len(label):]
+                # Advance by the regular-width label so the visible gap after ":" stays exact.
+                value_x = first_x + approx_text_width(label, size, bold=False)
                 draw_text_at(label, size=size, x=first_x, y_pos=first_y, bold=True)
+                if first_value:
+                    draw_text_at(first_value, size=size, x=value_x, y_pos=first_y, bold=False)
+            else:
+                draw_text_at(first_line, size=size, x=first_x, y_pos=first_y, bold=False)
             y -= line_h
 
             for segment in wrapped[1:]:

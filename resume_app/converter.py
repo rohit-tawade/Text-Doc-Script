@@ -676,6 +676,28 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
             x += approx_text_width(text, size, bold=bold)
         y -= line_h
 
+    def add_text_segments_line_connected(segments, size, indent=0.0):
+        """
+        Draw multiple text segments on the same line in a single text object.
+        This avoids manual x-advance calculations and prevents spacing drift
+        between bold and regular segments (e.g., 'Category: ' + skills list).
+        """
+        nonlocal y
+        line_h = max(12.0, size * 1.35)
+        ensure_space(line_h)
+        x = margin_l + indent
+        current_cmds.append("BT")
+        current_cmds.append(f"1 0 0 1 {x:.2f} {y:.2f} Tm")
+        for text, bold in segments:
+            if not text:
+                continue
+            font_name = "/F2" if bold else "/F1"
+            safe = _pdf_escape_text(text)
+            current_cmds.append(f"{font_name} {size:.2f} Tf")
+            current_cmds.append(f"({safe}) Tj")
+        current_cmds.append("ET")
+        y -= line_h
+
     def add_rule_line():
         nonlocal y
         line_h = 6.0
@@ -795,20 +817,15 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
                 wrapped = [full_text] if full_text else [""]
 
             first_line = wrapped[0]
-            line_h = max(12.0, size * 1.35)
-            ensure_space(line_h)
-            first_x = margin_l + indent
-            first_y = y
             if label and first_line.startswith(label):
                 first_value = first_line[len(label):]
-                # Advance by the regular-width label so the visible gap after ":" stays exact.
-                value_x = first_x + approx_text_width(label, size, bold=False)
-                draw_text_at(label, size=size, x=first_x, y_pos=first_y, bold=True)
-                if first_value:
-                    draw_text_at(first_value, size=size, x=value_x, y_pos=first_y, bold=False)
+                add_text_segments_line_connected(
+                    [(label, True), (first_value, False)],
+                    size=size,
+                    indent=indent,
+                )
             else:
-                draw_text_at(first_line, size=size, x=first_x, y_pos=first_y, bold=False)
-            y -= line_h
+                add_text_line(first_line, size=size, bold=False, align="L", indent=indent)
 
             for segment in wrapped[1:]:
                 add_text_line(segment, size=size, bold=False, align="L", indent=indent)

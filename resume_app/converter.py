@@ -58,6 +58,11 @@ except Exception:
     ListFlowable = None
     ListItem = None
 
+try:
+    from fpdf import FPDF
+except Exception:
+    FPDF = None
+
 TEMPLATE_FILE = Path(__file__).parent / 'template.jinja'
 
 
@@ -368,6 +373,128 @@ def build_contact_items(contact_lines):
     return entries
 
 
+def _pdf_safe_text(text):
+    text = str(text or "")
+    replacements = {
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u2022": "-",
+        "\u00a0": " ",
+    }
+    for src, dst in replacements.items():
+        text = text.replace(src, dst)
+    return text.encode("latin-1", errors="replace").decode("latin-1")
+
+
+def _render_pdf_fpdf(data, pdf_path, file_metadata=None):
+    if FPDF is None:
+        raise RuntimeError("fpdf2 is not installed; FPDF PDF generation is unavailable.")
+
+    pdf_path = Path(pdf_path)
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    file_metadata = file_metadata or {}
+
+    pdf = FPDF(format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_margins(12, 12, 12)
+    pdf.add_page()
+
+    def write_line(text, size=10.5, style="", align="L", ln=True):
+        pdf.set_font("Helvetica", style=style, size=size)
+        pdf.cell(0, 6, _pdf_safe_text(text), ln=1 if ln else 0, align=align)
+
+    def write_para(text, size=10.5, style=""):
+        pdf.set_font("Helvetica", style=style, size=size)
+        pdf.multi_cell(0, 6, _pdf_safe_text(text))
+
+    candidate_name = (data.get("name") or "").strip() or "Candidate Name"
+    pdf.set_font("Helvetica", style="B", size=20)
+    pdf.cell(0, 10, _pdf_safe_text(candidate_name), ln=1, align="C")
+
+    effective_title = (data.get("title") or "").strip()
+    metadata_role = (file_metadata.get("role") or "").strip()
+    if metadata_role and effective_title and metadata_role.lower() == effective_title.lower():
+        metadata_role = ""
+    headline_bits = [bit for bit in (effective_title, metadata_role) if bit]
+    if headline_bits:
+        pdf.set_font("Helvetica", style="B", size=11)
+        pdf.cell(0, 7, _pdf_safe_text(" | ".join(dict.fromkeys(headline_bits))), ln=1, align="C")
+    pdf.ln(1)
+
+    contact_items = build_contact_items(data.get("contact", []))
+    if contact_items:
+        label_titles = {
+            "phone": "Phone",
+            "email": "Email",
+            "address": "Address",
+            "nationality": "Nationality",
+        }
+        for item in contact_items:
+            label_key = item.get("label_key", "")
+            value = (item.get("value") or "").strip()
+            if not value:
+                continue
+            if label_key in label_titles:
+                write_para(f"{label_titles[label_key]}: {value}", size=10.5, style="")
+            else:
+                write_para(value, size=10.5, style="")
+        pdf.ln(2)
+
+    summary_text = clean_bullet_text(data.get("summary", ""))
+    if summary_text:
+        write_line("PROFESSIONAL SUMMARY", size=11, style="B")
+        write_para(summary_text)
+        pdf.ln(1)
+
+    experience_items = data.get("experience", [])
+    if experience_items:
+        write_line("PROFESSIONAL EXPERIENCE", size=11, style="B")
+        for role in experience_items:
+            header = clean_bullet_text(role.get("header", ""))
+            duration = clean_bullet_text(role.get("duration", ""))
+            if header and duration:
+                write_para(f"{header} | {duration}", size=10.5, style="B")
+            elif header:
+                write_para(header, size=10.5, style="B")
+            elif duration:
+                write_para(duration, size=10.5, style="")
+
+            bullets = [clean_bullet_text(item) for item in role.get("bullets", []) if clean_bullet_text(item)]
+            for bullet in bullets:
+                write_para(f"- {bullet}")
+            pdf.ln(1)
+
+    skills_lines = [clean_bullet_text(line) for line in data.get("skills_raw", "").splitlines() if clean_bullet_text(line)]
+    if skills_lines:
+        write_line("SKILLS", size=11, style="B")
+        for entry in skills_lines:
+            if ":" in entry:
+                write_para(entry)
+            else:
+                write_para(f"- {entry}")
+        pdf.ln(1)
+
+    certifications = [clean_bullet_text(item) for item in data.get("certifications", []) if clean_bullet_text(item)]
+    if certifications:
+        write_line("CERTIFICATIONS", size=11, style="B")
+        for cert in certifications:
+            write_para(f"- {cert}")
+        pdf.ln(1)
+
+    education_lines = [clean_bullet_text(item) for item in data.get("education", []) if clean_bullet_text(item)]
+    if education_lines:
+        write_line("EDUCATION", size=11, style="B")
+        for edu in education_lines:
+            write_para(edu)
+
+    pdf.output(str(pdf_path))
+    return pdf_path
+
+
 def _derive_output_stem(data, file_metadata, fallback_stem):
     split_first, split_last = _split_name(data.get('name', ''))
     component_specs = [
@@ -432,6 +559,8 @@ def convert_text_to_resume(resume_text, output_dir=None, source_hint=None):
 
 
 def render_pdf(data, pdf_path, file_metadata=None):
+    if FPDF is not None:
+        return _render_pdf_fpdf(data, pdf_path, file_metadata)
     if SimpleDocTemplate is None or ParagraphStyle is None:
         raise RuntimeError("reportlab is not installed; PDF generation is unavailable.")
 

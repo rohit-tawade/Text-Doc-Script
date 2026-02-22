@@ -1,2 +1,2 @@
 kivy
-reportlab
+fpdf2

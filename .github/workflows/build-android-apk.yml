@@ -51,9 +51,19 @@ jobs:
           ANDROIDSDK: /home/runner/.buildozer/android/platform/android-sdk
           ANDROIDNDK: /home/runner/.buildozer/android/platform/android-ndk-r25b
         run: |
-          buildozer -v android debug
+          set -o pipefail
+          buildozer -v android debug 2>&1 | tee buildozer.log
+
+      - name: Upload build log (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resume-app-build-log
+          path: resume_app/buildozer.log
+          if-no-files-found: ignore
 
       - name: Upload APK artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: resume-app-apk

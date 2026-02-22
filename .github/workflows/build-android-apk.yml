@@ -21,6 +21,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
       - name: Cache Buildozer and p4a downloads
         uses: actions/cache@v4
         with:
@@ -49,8 +55,11 @@ jobs:
         env:
           ANDROIDSDK: /home/runner/.buildozer/android/platform/android-sdk
           ANDROIDNDK: /home/runner/.buildozer/android/platform/android-ndk-r25b
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
         run: |
           set -o pipefail
+          export PATH="$JAVA_HOME/bin:$PATH"
+          java -version
           buildozer -v android debug 2>&1 | tee buildozer.log
 
       - name: Upload build log (always)
@@ -65,10 +74,17 @@ jobs:
         if: failure()
         working-directory: resume_app
         run: |
-          echo "=== First 50 error-like lines ==="
-          grep -nEi "error:|autoreconf|autoconf|Traceback|failed" buildozer.log | head -n 50 || true
-          echo "=== Last 200 lines ==="
-          tail -n 200 buildozer.log || true
+          echo "=== Gradle/build markers (last 80) ==="
+          grep -nEi "gradlew failed|FAILURE: Build failed|What went wrong|Execution failed for task|Manifest merger failed|Android resource linking failed|A problem occurred|requires Java|unsupported class file|Traceback" buildozer.log | tail -n 80 || true
+          echo "=== Tail 300 lines ==="
+          tail -n 300 buildozer.log || true
+          echo "=== Gradle invocation context (around 'gradlew clean assembleDebug') ==="
+          line=$(grep -n "gradlew clean assembleDebug" buildozer.log | tail -n 1 | cut -d: -f1 || true)
+          if [ -n "$line" ]; then
+            start=$((line>120 ? line-120 : 1))
+            end=$((line+220))
+            sed -n "${start},${end}p" buildozer.log || true
+          fi
 
       - name: Upload APK artifact
         if: success()

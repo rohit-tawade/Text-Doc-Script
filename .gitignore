@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Virtual envs
+.venv/
+venv/
+build-env/
+
+# Local build outputs
+build/
+dist/
+
+# Kivy / Buildozer
+resume_app/.buildozer/
+resume_app/bin/
+
+# OS/editor temp files
+*.swp
+*.tmp
+*.log

@@ -101,7 +101,10 @@ class ResumePdfApp(App):
             self.set_status("Storage permission denied. You can still retry on Generate PDF.")
 
     def set_status(self, message):
-        self.status_label.text = f"Status: {message}"
+        message_text = str(message).replace("\n", " ").strip()
+        if len(message_text) > 180:
+            message_text = message_text[:177] + "..."
+        self.status_label.text = f"Status: {message_text}"
 
     def get_download_directory(self):
         if platform == "android":
@@ -151,18 +154,31 @@ class ResumePdfApp(App):
 
         PythonActivity = autoclass("org.kivy.android.PythonActivity")
         ContentValues = autoclass("android.content.ContentValues")
+        Integer = autoclass("java.lang.Integer")
         MediaStoreDownloads = autoclass("android.provider.MediaStore$Downloads")
         MediaColumns = autoclass("android.provider.MediaStore$MediaColumns")
 
         activity = PythonActivity.mActivity
         resolver = activity.getContentResolver()
 
+        def content_values_put(values_obj, key, value):
+            """Box Python primitives so pyjnius resolves ContentValues.put() overloads."""
+            if isinstance(value, bool):
+                # pyjnius can map Python bool directly to java.lang.Boolean overload
+                values_obj.put(key, bool(value))
+            elif isinstance(value, int):
+                values_obj.put(key, Integer.valueOf(int(value)))
+            elif isinstance(value, float):
+                values_obj.put(key, float(value))
+            else:
+                values_obj.put(key, value)
+
         values = ContentValues()
-        values.put(MediaColumns.DISPLAY_NAME, filename)
-        values.put(MediaColumns.MIME_TYPE, "application/pdf")
+        content_values_put(values, MediaColumns.DISPLAY_NAME, filename)
+        content_values_put(values, MediaColumns.MIME_TYPE, "application/pdf")
         if self.get_android_sdk_int() >= 29:
-            values.put(MediaColumns.RELATIVE_PATH, f"Download/{folder_name}")
-            values.put(MediaColumns.IS_PENDING, 1)
+            content_values_put(values, MediaColumns.RELATIVE_PATH, f"Download/{folder_name}")
+            content_values_put(values, MediaColumns.IS_PENDING, 1)
 
         uri = resolver.insert(MediaStoreDownloads.EXTERNAL_CONTENT_URI, values)
         if uri is None:
@@ -178,7 +194,10 @@ class ResumePdfApp(App):
                     chunk = pdf_file.read(65536)
                     if not chunk:
                         break
-                    output_stream.write(bytearray(chunk))
+                    try:
+                        output_stream.write(chunk)
+                    except Exception:
+                        output_stream.write(bytearray(chunk))
             output_stream.flush()
         finally:
             if output_stream is not None:
@@ -186,7 +205,7 @@ class ResumePdfApp(App):
 
         if self.get_android_sdk_int() >= 29:
             done_values = ContentValues()
-            done_values.put(MediaColumns.IS_PENDING, 0)
+            content_values_put(done_values, MediaColumns.IS_PENDING, 0)
             resolver.update(uri, done_values, None, None)
 
         return ANDROID_DOWNLOAD_DIR / folder_name / filename
@@ -231,6 +250,7 @@ class ResumePdfApp(App):
                 result = convert_text_to_pdf(resume_text, target_path, source_hint=filename)
             self.set_status(f"Success - Saved to {result}")
         except Exception as exc:
+            print(f"PDF generation/save failed: {exc}")
             self.set_status(f"Failed - {exc}")
 
     def ensure_storage_permission(self, callback):

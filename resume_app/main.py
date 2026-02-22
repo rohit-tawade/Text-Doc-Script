@@ -4,6 +4,7 @@ import shutil
 
 from kivy.app import App
 from kivy.clock import Clock
+from kivy.core.clipboard import Clipboard
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -66,10 +67,13 @@ class ResumePdfApp(App):
         root.add_widget(filename_row)
 
         buttons = BoxLayout(orientation="horizontal", spacing=dp(8), size_hint_y=None, height=dp(48))
+        paste_btn = Button(text="Paste")
+        paste_btn.bind(on_release=self.on_paste)
         generate_btn = Button(text="Generate PDF")
         generate_btn.bind(on_release=self.on_generate_pdf)
         clear_btn = Button(text="Clear")
         clear_btn.bind(on_release=self.on_clear)
+        buttons.add_widget(paste_btn)
         buttons.add_widget(generate_btn)
         buttons.add_widget(clear_btn)
         root.add_widget(buttons)
@@ -307,6 +311,38 @@ class ResumePdfApp(App):
         self.resume_input.text = ""
         self.filename_input.text = DEFAULT_FILENAME
         self.set_status("Cleared.")
+
+    def on_paste(self, _instance):
+        clipboard_text = ""
+        try:
+            clipboard_text = Clipboard.paste() or ""
+        except Exception as exc:
+            clipboard_text = ""
+
+        if not clipboard_text.strip() and platform == "android":
+            try:
+                from jnius import autoclass
+
+                PythonActivity = autoclass("org.kivy.android.PythonActivity")
+                Context = autoclass("android.content.Context")
+                activity = PythonActivity.mActivity
+                clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE)
+                clip = clipboard.getPrimaryClip() if clipboard else None
+                if clip and clip.getItemCount() > 0:
+                    item = clip.getItemAt(0)
+                    coerced = item.coerceToText(activity)
+                    clipboard_text = "" if coerced is None else str(coerced)
+            except Exception as exc:
+                self.set_status(f"Failed - Paste error: {exc}")
+                return
+
+        clipboard_text = "" if clipboard_text is None else str(clipboard_text)
+        if not clipboard_text.strip():
+            self.set_status("Failed - Clipboard is empty.")
+            return
+
+        self.resume_input.text = clipboard_text
+        self.set_status("Pasted clipboard content.")
 
 
 if __name__ == "__main__":

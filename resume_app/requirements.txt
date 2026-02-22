@@ -1,3 +1,2 @@
 kivy
-fpdf2
 pyjnius

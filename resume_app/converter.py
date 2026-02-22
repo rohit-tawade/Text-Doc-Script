@@ -390,6 +390,303 @@ def _pdf_safe_text(text):
     return text.encode("latin-1", errors="replace").decode("latin-1")
 
 
+def _pdf_escape_text(text):
+    text = _pdf_safe_text(text)
+    text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    return text
+
+
+def _wrap_pdf_text(text, max_chars):
+    text = _pdf_safe_text(text).strip()
+    if not text:
+        return [""]
+    words = text.split()
+    if not words:
+        return [text]
+    lines = []
+    current = words[0]
+    for word in words[1:]:
+        candidate = f"{current} {word}"
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return lines
+
+
+def _render_pdf_builtin(data, pdf_path, file_metadata=None):
+    """Pure-Python text PDF renderer (no reportlab/fpdf dependency)."""
+    pdf_path = Path(pdf_path)
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    file_metadata = file_metadata or {}
+
+    page_w = 595.0   # A4 width in points
+    page_h = 842.0   # A4 height in points
+    margin_l = 36.0
+    margin_r = 36.0
+    margin_t = 36.0
+    margin_b = 36.0
+    content_w = page_w - margin_l - margin_r
+
+    def approx_text_width(text, size, bold=False):
+        # Simple approximation for built-in Helvetica metrics.
+        factor = 0.56 if bold else 0.52
+        return len(_pdf_safe_text(text)) * size * factor
+
+    def line_item(text, size=10.5, bold=False, align="L", indent=0.0, gap_after=0.0):
+        return {
+            "type": "line",
+            "text": _pdf_safe_text(text),
+            "size": float(size),
+            "bold": bool(bold),
+            "align": align,
+            "indent": float(indent),
+            "gap_after": float(gap_after),
+        }
+
+    def para_item(text, size=10.5, bold=False, indent=0.0, bullet=False, gap_after=0.0):
+        return {
+            "type": "para",
+            "text": _pdf_safe_text(text),
+            "size": float(size),
+            "bold": bool(bold),
+            "indent": float(indent),
+            "bullet": bool(bullet),
+            "gap_after": float(gap_after),
+        }
+
+    def spacer_item(height):
+        return {"type": "spacer", "height": float(height)}
+
+    items = []
+    candidate_name = (data.get("name") or "").strip() or "Candidate Name"
+    items.append(line_item(candidate_name, size=20, bold=True, align="C", gap_after=2))
+
+    effective_title = (data.get("title") or "").strip()
+    metadata_role = (file_metadata.get("role") or "").strip()
+    if metadata_role and effective_title and metadata_role.lower() == effective_title.lower():
+        metadata_role = ""
+    headline_bits = [bit for bit in (effective_title, metadata_role) if bit]
+    if headline_bits:
+        items.append(line_item(" | ".join(dict.fromkeys(headline_bits)), size=11, bold=True, align="C", gap_after=2))
+    items.append(spacer_item(4))
+
+    contact_items = build_contact_items(data.get("contact", []))
+    if contact_items:
+        label_titles = {
+            "phone": "Phone",
+            "email": "Email",
+            "address": "Address",
+            "nationality": "Nationality",
+        }
+        for item in contact_items:
+            label_key = item.get("label_key", "")
+            value = (item.get("value") or "").strip()
+            if not value:
+                continue
+            if label_key in label_titles:
+                items.append(para_item(f"{label_titles[label_key]}: {value}", size=10.5))
+            else:
+                items.append(para_item(value, size=10.5))
+        items.append(spacer_item(4))
+
+    summary_text = clean_bullet_text(data.get("summary", ""))
+    if summary_text:
+        items.append(line_item("PROFESSIONAL SUMMARY", size=11, bold=True, gap_after=1))
+        items.append(para_item(summary_text, size=10.5))
+        items.append(spacer_item(2))
+
+    experience_items = data.get("experience", [])
+    if experience_items:
+        items.append(line_item("PROFESSIONAL EXPERIENCE", size=11, bold=True, gap_after=1))
+        for role in experience_items:
+            header = clean_bullet_text(role.get("header", ""))
+            duration = clean_bullet_text(role.get("duration", ""))
+            if header and duration:
+                items.append(para_item(f"{header} | {duration}", size=10.5, bold=True))
+            elif header:
+                items.append(para_item(header, size=10.5, bold=True))
+            elif duration:
+                items.append(para_item(duration, size=10.5))
+
+            bullets = [clean_bullet_text(item) for item in role.get("bullets", []) if clean_bullet_text(item)]
+            for bullet in bullets:
+                items.append(para_item(bullet, size=10.5, indent=14, bullet=True))
+            items.append(spacer_item(3))
+
+    skills_lines = [clean_bullet_text(line) for line in data.get("skills_raw", "").splitlines() if clean_bullet_text(line)]
+    if skills_lines:
+        items.append(line_item("SKILLS", size=11, bold=True, gap_after=1))
+        for entry in skills_lines:
+            if ":" in entry:
+                items.append(para_item(entry, size=10.5))
+            else:
+                items.append(para_item(entry, size=10.5, indent=14, bullet=True))
+        items.append(spacer_item(2))
+
+    certifications = [clean_bullet_text(item) for item in data.get("certifications", []) if clean_bullet_text(item)]
+    if certifications:
+        items.append(line_item("CERTIFICATIONS", size=11, bold=True, gap_after=1))
+        for cert in certifications:
+            items.append(para_item(cert, size=10.5, indent=14, bullet=True))
+        items.append(spacer_item(2))
+
+    education_lines = [clean_bullet_text(item) for item in data.get("education", []) if clean_bullet_text(item)]
+    if education_lines:
+        items.append(line_item("EDUCATION", size=11, bold=True, gap_after=1))
+        for edu in education_lines:
+            items.append(para_item(edu, size=10.5))
+
+    page_streams = []
+    current_cmds = []
+    y = page_h - margin_t
+
+    def flush_page():
+        nonlocal current_cmds, y
+        if not current_cmds:
+            current_cmds = []
+            y = page_h - margin_t
+            return
+        stream = "\n".join(current_cmds).encode("latin-1", errors="replace")
+        page_streams.append(stream)
+        current_cmds = []
+        y = page_h - margin_t
+
+    def ensure_space(height_needed):
+        nonlocal y
+        if y - height_needed < margin_b:
+            flush_page()
+
+    def add_text_line(text, size, bold=False, align="L", indent=0.0):
+        nonlocal y
+        font_name = "/F2" if bold else "/F1"
+        safe = _pdf_escape_text(text)
+        line_h = max(12.0, size * 1.35)
+        ensure_space(line_h)
+        if align == "C":
+            width = approx_text_width(text, size, bold=bold)
+            x = max(margin_l, (page_w - width) / 2.0)
+        else:
+            x = margin_l + indent
+        current_cmds.append("BT")
+        current_cmds.append(f"{font_name} {size:.2f} Tf")
+        current_cmds.append(f"1 0 0 1 {x:.2f} {y:.2f} Tm")
+        current_cmds.append(f"({safe}) Tj")
+        current_cmds.append("ET")
+        y -= line_h
+
+    for item in items:
+        if item["type"] == "spacer":
+            ensure_space(item["height"])
+            y -= item["height"]
+            continue
+
+        if item["type"] == "line":
+            add_text_line(
+                item["text"],
+                item["size"],
+                bold=item["bold"],
+                align=item["align"],
+                indent=item["indent"],
+            )
+            if item.get("gap_after", 0):
+                ensure_space(item["gap_after"])
+                y -= item["gap_after"]
+            continue
+
+        # Paragraph (wrapped)
+        size = item["size"]
+        bold = item["bold"]
+        indent = item.get("indent", 0.0)
+        bullet = item.get("bullet", False)
+        line_h = max(12.0, size * 1.35)
+        max_chars = max(20, int((content_w - indent - (10 if bullet else 0)) / (size * 0.52)))
+        wrapped = _wrap_pdf_text(item["text"], max_chars)
+        for idx, segment in enumerate(wrapped):
+            prefix = "- " if (bullet and idx == 0) else ("  " if bullet else "")
+            add_text_line(prefix + segment, size=size, bold=bold, align="L", indent=indent)
+        if item.get("gap_after", 0):
+            ensure_space(item["gap_after"])
+            y -= item["gap_after"]
+
+    flush_page()
+    if not page_streams:
+        page_streams = [b""]
+
+    objects = [b""]
+
+    def alloc_obj():
+        objects.append(b"")
+        return len(objects) - 1
+
+    def set_obj(obj_id, data):
+        if isinstance(data, str):
+            data = data.encode("latin-1")
+        objects[obj_id] = data
+
+    catalog_id = alloc_obj()
+    pages_id = alloc_obj()
+    font_regular_id = alloc_obj()
+    font_bold_id = alloc_obj()
+
+    page_ids = []
+    content_ids = []
+    for _ in page_streams:
+        page_ids.append(alloc_obj())
+        content_ids.append(alloc_obj())
+
+    set_obj(font_regular_id, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    set_obj(font_bold_id, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>")
+
+    for idx, stream_bytes in enumerate(page_streams):
+        page_id = page_ids[idx]
+        content_id = content_ids[idx]
+        page_obj = (
+            f"<< /Type /Page /Parent {pages_id} 0 R "
+            f"/MediaBox [0 0 {page_w:.0f} {page_h:.0f}] "
+            f"/Resources << /Font << /F1 {font_regular_id} 0 R /F2 {font_bold_id} 0 R >> >> "
+            f"/Contents {content_id} 0 R >>"
+        )
+        set_obj(page_id, page_obj)
+        content_obj = (
+            f"<< /Length {len(stream_bytes)} >>\nstream\n".encode("latin-1")
+            + stream_bytes
+            + b"\nendstream"
+        )
+        set_obj(content_id, content_obj)
+
+    kids = " ".join(f"{pid} 0 R" for pid in page_ids)
+    set_obj(pages_id, f"<< /Type /Pages /Kids [{kids}] /Count {len(page_ids)} >>")
+    set_obj(catalog_id, f"<< /Type /Catalog /Pages {pages_id} 0 R >>")
+
+    out = bytearray()
+    out.extend(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = [0] * len(objects)
+
+    for obj_id in range(1, len(objects)):
+        offsets[obj_id] = len(out)
+        out.extend(f"{obj_id} 0 obj\n".encode("latin-1"))
+        out.extend(objects[obj_id])
+        out.extend(b"\nendobj\n")
+
+    xref_offset = len(out)
+    out.extend(f"xref\n0 {len(objects)}\n".encode("latin-1"))
+    out.extend(b"0000000000 65535 f \n")
+    for obj_id in range(1, len(objects)):
+        out.extend(f"{offsets[obj_id]:010d} 00000 n \n".encode("latin-1"))
+    out.extend(
+        (
+            f"trailer\n<< /Size {len(objects)} /Root {catalog_id} 0 R >>\n"
+            f"startxref\n{xref_offset}\n%%EOF\n"
+        ).encode("latin-1")
+    )
+
+    pdf_path.write_bytes(out)
+    return pdf_path
+
+
 def _render_pdf_fpdf(data, pdf_path, file_metadata=None):
     if FPDF is None:
         raise RuntimeError("fpdf2 is not installed; FPDF PDF generation is unavailable.")
@@ -559,6 +856,10 @@ def convert_text_to_resume(resume_text, output_dir=None, source_hint=None):
 
 
 def render_pdf(data, pdf_path, file_metadata=None):
+    try:
+        return _render_pdf_builtin(data, pdf_path, file_metadata)
+    except Exception as exc:
+        print(f"⚠ Built-in PDF renderer failed, trying library fallback: {exc}")
     if FPDF is not None:
         return _render_pdf_fpdf(data, pdf_path, file_metadata)
     if SimpleDocTemplate is None or ParagraphStyle is None:

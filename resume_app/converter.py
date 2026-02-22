@@ -586,8 +586,10 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         add_section_heading("SKILLS")
         for entry in skills_lines:
             if ":" in entry:
-                label, value = entry.split(":", 1)
-                items.append(kv_para_item(f"{label.strip()}: ", value.strip(), size=10.0, gap_after=1.2))
+                category, skills = entry.split(":", 1)
+                category = " ".join(category.replace("\t", " ").split()).strip()
+                skills = " ".join(skills.replace("\t", " ").split()).strip()
+                items.append(kv_para_item(f"{category}: ", skills, size=10.0, gap_after=1.2))
             else:
                 items.append(para_item(entry, size=10.0, indent=12, bullet=True, gap_after=0.8))
 
@@ -643,6 +645,17 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
         current_cmds.append(f"({safe}) Tj")
         current_cmds.append("ET")
         y -= line_h
+
+    def draw_text_at(text, size, x, y_pos, bold=False):
+        if not text:
+            return
+        font_name = "/F2" if bold else "/F1"
+        safe = _pdf_escape_text(text)
+        current_cmds.append("BT")
+        current_cmds.append(f"{font_name} {size:.2f} Tf")
+        current_cmds.append(f"1 0 0 1 {x:.2f} {y_pos:.2f} Tm")
+        current_cmds.append(f"({safe}) Tj")
+        current_cmds.append("ET")
 
     def add_text_segments_line(segments, size, indent=0.0):
         """Draw multiple text segments on the same line (e.g., bold label + normal value)."""
@@ -781,12 +794,17 @@ def _render_pdf_builtin(data, pdf_path, file_metadata=None):
             if not wrapped:
                 wrapped = [full_text] if full_text else [""]
 
+            # Render first line as a normal paragraph line, then overlay only the label in bold.
+            # This avoids visible extra spacing caused by approximate bold-width x advancement.
             first_line = wrapped[0]
+            line_h = max(12.0, size * 1.35)
+            ensure_space(line_h)
+            first_x = margin_l + indent
+            first_y = y
+            draw_text_at(first_line, size=size, x=first_x, y_pos=first_y, bold=False)
             if label and first_line.startswith(label):
-                first_value = first_line[len(label):]
-                add_text_segments_line([(label, True), (first_value, False)], size=size, indent=indent)
-            else:
-                add_text_line(first_line, size=size, bold=False, align="L", indent=indent)
+                draw_text_at(label, size=size, x=first_x, y_pos=first_y, bold=True)
+            y -= line_h
 
             for segment in wrapped[1:]:
                 add_text_line(segment, size=size, bold=False, align="L", indent=indent)

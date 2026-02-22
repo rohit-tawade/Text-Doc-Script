@@ -36,46 +36,24 @@ jobs:
           sys.path.insert(0, "resume_app")
           import converter
 
-          sample_resume = """Rohit Tawade
-          Phone: +91 9999999999
-          Email: rohit@example.com
-          Address: Pune
-          Nationality: Indian
-          Company Name:
-
-          Site Reliability Engineer
-
-          Professional Summary
-          SRE focused on Kubernetes, CI/CD, observability, and platform reliability.
-
-          Professional Experience
-          Example Corp - Site Reliability Engineer
-          Jan 2024 - Dec 2024
-          * Operated Kubernetes clusters.
-          * Built CI/CD pipelines.
-
-          Technical Skills
-          * Containers: Kubernetes, Docker
-          * Observability: Prometheus, Grafana
-
-          Certification
-          * Example Certification
-
-          Education
-          * MCA, University, 2018
-          """
+          resume_path = Path("deshraj-sharma-.txt")
+          assert resume_path.exists(), (
+              "CI smoke resume file missing: deshraj-sharma-.txt. "
+              "Commit it (or provide a sanitized copy at the same path) so the smoke PDF uses real data."
+          )
+          sample_resume = resume_path.read_text(encoding="utf-8")
 
           out_dir = Path("ci_smoke")
           out_dir.mkdir(parents=True, exist_ok=True)
           out_pdf = out_dir / "smoke.pdf"
-          result = converter.convert_text_to_pdf(sample_resume, out_pdf, source_hint="rohit-tawade-sre.txt")
+          result = converter.convert_text_to_pdf(sample_resume, out_pdf, source_hint=resume_path.name)
           pdf_path = Path(result)
           data = pdf_path.read_bytes()
 
           assert pdf_path.exists(), "Smoke PDF was not created"
           assert data.startswith(b"%PDF-"), "Output is not a PDF"
           assert len(data) > 1000, f"PDF too small ({len(data)} bytes)"
-          for token in (b"Rohit Tawade", b"PROFESSIONAL SUMMARY", b"Kubernetes", b"EDUCATION"):
+          for token in (b"Deshraj Sharma", b"PROFESSIONAL SUMMARY", b"Argo CD", b"EDUCATION"):
               assert token in data, f"Expected token missing from PDF bytes: {token!r}"
           print(f"Smoke test OK: {pdf_path} ({len(data)} bytes)")
           PY

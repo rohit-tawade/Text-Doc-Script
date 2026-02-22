@@ -1,0 +1,91 @@
+Deshraj Sharma
+Phone: +91 8390120384
+Email: [deshrajsharma.tech@gmail.com](mailto:deshrajsharma.tech@gmail.com)
+Address: Porwal Road, Lohegaon, Pune – 411047
+Nationality: Indian
+Company Name: Optimyze Consulting
+
+Site Reliability Engineer
+
+Professional Summary
+11 years of experience operating and scaling cloud-native platforms with strong focus on Kubernetes, CI/CD, observability, and platform reliability. Hands-on experience managing production-grade Kubernetes environments, implementing GitOps workflows with Argo CD, and building secure, highly available systems on Google Cloud Platform. Strong background in Linux administration, monitoring and log management, and improving platform stability in fast-paced environments.
+
+Professional Experience
+
+Netskope — Senior Site Reliability Engineer
+Jan 2025 – Dec 2025
+
+• Operated and scaled Kubernetes clusters supporting production workloads with high availability requirements.
+• Implemented GitOps deployment strategies using Argo CD to ensure controlled and traceable releases.
+• Built and maintained CI/CD pipelines aligned with GitLab-based workflows.
+• Enhanced observability through Prometheus metrics, Grafana dashboards, and centralized logging with ELK Stack.
+• Strengthened platform security by applying network policies, access controls, and secure configuration practices.
+• Automated operational tasks using Python and shell scripting to improve deployment reliability.
+• Monitored application health and system performance to proactively address reliability risks.
+• Collaborated with development teams to improve deployment processes and platform stability.
+
+John Deere — Platform Engineer
+Aug 2022 – Dec 2024
+
+• Deployed and operated containerized applications on Kubernetes and OpenShift clusters across cloud environments.
+• Supported CI/CD pipelines using GitHub Actions and Jenkins to enable continuous delivery.
+• Implemented monitoring and alerting for distributed services using Prometheus and cloud logging tools.
+• Assisted in managing infrastructure on GCP and AWS with focus on scalability and resilience.
+• Applied infrastructure automation using Terraform for reproducible cloud provisioning.
+• Supported Node.js-based services by ensuring stable runtime environments and reliable deployments.
+• Improved logging and traceability to support faster incident resolution.
+• Collaborated with security teams to enforce web security best practices and platform hardening.
+
+SailPoint — DevOps Engineer
+Aug 2018 – Jul 2022
+
+• Supported infrastructure platforms used by internal engineering teams.
+• Automated server provisioning and configuration management using Python and Bash.
+• Assisted with Docker containerization and Kubernetes-based deployments.
+• Integrated application workflows into CI/CD pipelines for consistent releases.
+• Implemented monitoring and alerting for platform services.
+• Managed Linux systems with focus on stability and secure configurations.
+• Troubleshot infrastructure and deployment issues across environments.
+• Maintained infrastructure scripts and operational documentation.
+
+Infosys — DevOps Engineer
+Nov 2014 – Jul 2018
+
+• Supported Linux-based development and production environments.
+• Built and maintained Jenkins pipelines for build and release automation.
+• Automated routine administrative tasks using Python and Bash scripts.
+• Managed application deployments and configuration updates.
+• Assisted with monitoring and log analysis for application stability.
+• Coordinated releases with QA and operations teams.
+• Participated in incident response and troubleshooting activities.
+• Documented operational standards and deployment procedures.
+
+Technical Skills
+
+Containers & Orchestration: Kubernetes, Argo CD, Docker, Helm
+
+CI/CD & Automation: GitLab CI/CD, Jenkins, GitHub Actions, GitOps concepts
+
+Cloud Platforms: Google Cloud Platform (GCP), AWS, Azure
+
+Observability & Logging: Prometheus, Grafana, ELK Stack, monitoring and alerting practices
+
+Systems & Security: Linux administration, web security fundamentals, platform hardening
+
+Programming & Scripting: Python, Bash, Node.js familiarity
+
+Infrastructure as Code: Terraform, Cloud-native provisioning
+
+Reliability & SRE Practices: High availability design, incident response, performance monitoring, scalability planning
+
+Certification
+
+AWS Certified Solutions Architect – Associate
+Infrastructure as Code with Terraform on AWS – Udemy
+Hands-On Kubernetes with AWS – Udemy
+MLOps Fundamentals: CI/CD for Machine Learning – Udemy
+Deploying Machine Learning Models on Vertex AI – Udemy
+
+Education
+MCA, Savitribai Phule Pune University, 2018
+BCA, Savitribai Phule Pune University, 2014

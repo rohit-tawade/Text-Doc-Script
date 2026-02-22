@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-apk:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
 
     steps:
@@ -25,8 +25,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.buildozer
-            resume_app/.buildozer
+            ~/.buildozer/android/packages
           key: buildozer-${{ runner.os }}-${{ hashFiles('resume_app/buildozer.spec', 'resume_app/main.py', 'resume_app/converter.py') }}
           restore-keys: |
             buildozer-${{ runner.os }}-
@@ -35,7 +34,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git zip unzip openjdk-17-jdk autoconf libtool pkg-config \
+            git zip unzip openjdk-17-jdk autoconf automake libtool gettext autopoint pkg-config m4 \
             zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
             cmake libffi-dev libssl-dev libsqlite3-dev libjpeg-dev \
             liblzma-dev libbz2-dev
@@ -61,6 +60,15 @@ jobs:
           name: resume-app-build-log
           path: resume_app/buildozer.log
           if-no-files-found: ignore
+
+      - name: Print error context (on failure)
+        if: failure()
+        working-directory: resume_app
+        run: |
+          echo "=== First 50 error-like lines ==="
+          grep -nEi "error:|autoreconf|autoconf|Traceback|failed" buildozer.log | head -n 50 || true
+          echo "=== Last 200 lines ==="
+          tail -n 200 buildozer.log || true
 
       - name: Upload APK artifact
         if: success()
